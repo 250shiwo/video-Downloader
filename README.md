@@ -14,12 +14,13 @@
 - 本地任务状态展示
 - 基于字幕的 AI 总结
 - 本地设置管理
+- B站 普通公开视频原生解析与下载
 
 ## 技术栈
 
 - 前端：React + TypeScript + Vite
 - 后端：FastAPI
-- 下载引擎：yt-dlp
+- 下载引擎：B站 原生下载通道 + yt-dlp
 - AI 接口：兼容 OpenAI 风格的聊天补全接口
 
 ## 快速启动
@@ -63,17 +64,11 @@ npm test
 python -m pytest api/tests
 ```
 
-## B站 412 说明
+## B站 说明
 
-- 如果 B站 返回 `HTTP Error 412: Precondition Failed`，通常是平台风控校验触发
-- 请打开设置页，填写 `浏览器 Cookie 来源`
-- 推荐值：
-  - `chrome`
-  - `edge`
-  - `firefox`
-  - `chrome:Default`
-- 填写前请确保对应浏览器里已经登录 B站
-- 也可以改用 `Cookie 文件路径`，填写 Netscape 格式 `cookies.txt` 的绝对路径
+- 对普通公开 `B站` 视频，后端优先走站内公开接口解析元信息和播放流
+- 下载视频时会分别获取音视频流，并通过 `ffmpeg` 合并为本地文件
+- 若链接属于会员、番剧、付费、区域限制或其他受限内容，系统会返回用户可理解的失败提示
 
 ## 文档
 

@@ -4,10 +4,12 @@
 flowchart LR
     A["React 前端工作台"] --> B["FastAPI 接口层"]
     B --> C["任务与配置服务"]
-    C --> D["yt-dlp 下载引擎"]
-    C --> E["本地配置文件"]
-    C --> F["内存任务状态"]
-    C --> G["OpenAI 兼容模型接口"]
+    C --> D["B站 原生解析与下载服务"]
+    C --> E["yt-dlp 下载引擎"]
+    D --> F["FFmpeg 合并与音频提取"]
+    C --> G["本地配置文件"]
+    C --> H["内存任务状态"]
+    C --> I["OpenAI 兼容模型接口"]
 ```
 
 ## 2. 技术说明
@@ -16,7 +18,7 @@ flowchart LR
 - 样式：CSS Variables + 自定义模块化样式
 - 初始化工具：Vite
 - 后端：FastAPI + Pydantic
-- 下载引擎：yt-dlp CLI
+- 下载引擎：B站 原生解析下载 + yt-dlp CLI
 - 数据存储：无数据库，使用 JSON 配置文件与内存态任务
 - 外部服务：可选 OpenAI 兼容大模型接口
 
@@ -163,7 +165,10 @@ flowchart TD
     A --> E["Config Service"]
     C --> F["Task Manager"]
     C --> G["yt-dlp Runner"]
-    D --> H["LLM Client"]
+    C --> H["Bilibili Service"]
+    H --> I["B站 公开接口"]
+    H --> J["FFmpeg"]
+    D --> K["LLM Client"]
 ```
 
 ## 6. 数据模型

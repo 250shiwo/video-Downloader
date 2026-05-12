@@ -15,8 +15,6 @@ export type AppSettings = {
   download_dir: string
   default_items: DownloadItems
   ai: AISettings
-  browser_cookies: string
-  cookies_file: string
 }
 
 export type ParseResponse = {

@@ -30,12 +30,6 @@ export default function Settings() {
       if (path === 'download_dir') {
         return { ...current, download_dir: value as string }
       }
-      if (path === 'browser_cookies') {
-        return { ...current, browser_cookies: value as string }
-      }
-      if (path === 'cookies_file') {
-        return { ...current, cookies_file: value as string }
-      }
       if (path.startsWith('ai.')) {
         const key = path.replace('ai.', '') as keyof AppSettings['ai']
         return {
@@ -122,30 +116,6 @@ export default function Settings() {
                     onChange={(event) => update('ai.model', event.target.value)}
                   />
                 </Field>
-              </FormGroup>
-
-              <FormGroup title="站点访问辅助">
-                <Field label="浏览器 Cookie 来源">
-                  <input
-                    className="field-input"
-                    placeholder="例如 chrome、edge、firefox 或 chrome:Default"
-                    value={draft.browser_cookies}
-                    onChange={(event) => update('browser_cookies', event.target.value)}
-                  />
-                </Field>
-                <Field label="Cookie 文件路径">
-                  <input
-                    className="field-input"
-                    placeholder="可选，填写 Netscape 格式 cookies.txt 的绝对路径"
-                    value={draft.cookies_file}
-                    onChange={(event) => update('cookies_file', event.target.value)}
-                  />
-                </Field>
-                <p className="rounded-[20px] bg-[var(--paper)] px-4 py-4 text-sm leading-7 text-[var(--muted)]">
-                  如果 B站 出现 `HTTP Error 412`，通常是风控导致。推荐优先填写“浏览器 Cookie
-                  来源”，例如 `chrome` 或 `edge`，并确保对应浏览器里已经登录 B站。若两项都填写，系统会优先使用浏览器
-                  Cookie。
-                </p>
               </FormGroup>
 
               <button

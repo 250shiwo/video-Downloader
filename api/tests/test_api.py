@@ -1,8 +1,7 @@
 from fastapi.testclient import TestClient
 
 from api.main import app
-from api.models import AppSettings
-from api.services.yt_dlp_service import YtDlpService
+from api.services.bilibili_service import BilibiliService
 
 
 client = TestClient(app)
@@ -28,8 +27,6 @@ def test_settings_roundtrip() -> None:
             "api_key": "demo-key",
             "model": "demo-model",
         },
-        "browser_cookies": "chrome",
-        "cookies_file": "/tmp/cookies.txt",
     }
     save_response = client.put("/api/settings", json=payload)
     assert save_response.status_code == 200
@@ -37,7 +34,6 @@ def test_settings_roundtrip() -> None:
     fetch_response = client.get("/api/settings")
     assert fetch_response.status_code == 200
     assert fetch_response.json()["ai"]["model"] == "demo-model"
-    assert fetch_response.json()["browser_cookies"] == "chrome"
 
 
 def test_parse_rejects_unknown_platform() -> None:
@@ -45,24 +41,22 @@ def test_parse_rejects_unknown_platform() -> None:
     assert response.status_code == 400
 
 
-def test_bilibili_412_error_message_is_more_actionable() -> None:
-    service = YtDlpService()
-    message = service._normalize_error(
-        "bilibili",
-        "ERROR: [BiliBili] xxx: Unable to download webpage: HTTP Error 412: Precondition Failed",
-    )
-    assert "浏览器 Cookie 来源" in message
+def test_resolve_bvid_from_direct_url() -> None:
+    service = BilibiliService()
+    bvid, webpage_url = service._resolve_bvid("https://www.bilibili.com/video/BV1E7wtzaEdq")
+    assert bvid == "BV1E7wtzaEdq"
+    assert webpage_url.endswith("/BV1E7wtzaEdq")
 
 
-def test_browser_cookies_precede_cookie_file() -> None:
-    service = YtDlpService()
-    command = service._base_command(
-        "yt-dlp",
-        settings=AppSettings(
-            browser_cookies="chrome",
-            cookies_file="/tmp/cookies.txt",
-        ),
-        platform="bilibili",
+def test_convert_subtitle_json_to_srt() -> None:
+    service = BilibiliService()
+    srt = service._subtitle_json_to_srt(
+        {
+            "body": [
+                {"from": 0.0, "to": 2.5, "content": "第一句"},
+                {"from": 3.0, "to": 5.0, "content": "第二句"},
+            ]
+        }
     )
-    assert "--cookies-from-browser" in command
-    assert "--cookies" not in command
+    assert "00:00:00,000 --> 00:00:02,500" in srt
+    assert "第一句" in srt

@@ -6,37 +6,24 @@ import subprocess
 from pathlib import Path
 
 from api.models import AppSettings, DownloadItems, ParseResponse
+from api.services.bilibili_service import BilibiliService
 from api.services.link_parser import detect_platform
 from api.services.task_manager import TaskManager
 
 
 class YtDlpService:
+    def __init__(self) -> None:
+        self.bilibili_service = BilibiliService()
+
     def _base_command(
         self,
         binary: str,
-        settings: AppSettings | None = None,
         platform: str | None = None,
     ) -> list[str]:
         command = [binary]
-        if settings:
-            if settings.browser_cookies.strip():
-                command.extend(["--cookies-from-browser", settings.browser_cookies.strip()])
-            elif settings.cookies_file.strip():
-                command.extend(["--cookies", settings.cookies_file.strip()])
 
         if platform == "bilibili":
-            command.extend(
-                [
-                    "--add-header",
-                    "Referer:https://www.bilibili.com/",
-                    "--add-header",
-                    (
-                        "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/136.0.0.0 Safari/537.36"
-                    ),
-                ]
-            )
+            return command
 
         return command
 
@@ -45,8 +32,8 @@ class YtDlpService:
         lowered = message.lower()
         if platform == "bilibili" and "http error 412" in lowered:
             return (
-                "B站返回 412 风控校验失败。请先在设置页填写“浏览器 Cookie 来源”"
-                "（例如 chrome、edge、firefox），并确保对应浏览器里已经登录 B站，再重试。"
+                "当前 B站 链接触发了平台风控校验。普通公开视频会优先走站内公开解析，"
+                "如果仍失败，请稍后重试或更换另一个公开视频链接。"
             )
         return message
 
@@ -58,8 +45,11 @@ class YtDlpService:
 
     def fetch_metadata(self, url: str, settings: AppSettings | None = None) -> ParseResponse:
         platform = detect_platform(url)
+        if platform == "bilibili":
+            return self.bilibili_service.fetch_metadata(url)
+
         binary = self.ensure_binary()
-        command = self._base_command(binary, settings=settings, platform=platform)
+        command = self._base_command(binary, platform=platform)
         result = subprocess.run(
             [*command, "--dump-single-json", "--skip-download", url],
             capture_output=True,
@@ -98,14 +88,24 @@ class YtDlpService:
         settings: AppSettings,
         task_manager: TaskManager,
     ) -> None:
-        binary = self.ensure_binary()
         platform = detect_platform(url)
+        if platform == "bilibili":
+            self.bilibili_service.run_download_task(
+                task_id=task_id,
+                url=url,
+                items=items,
+                download_dir=settings.download_dir,
+                task_manager=task_manager,
+            )
+            return
+
+        binary = self.ensure_binary()
         task_manager.update_task(task_id, status="running", progress=5)
 
         target_dir = Path(settings.download_dir).expanduser() / task_id
         target_dir.mkdir(parents=True, exist_ok=True)
         output_template = str(target_dir / "%(title).120B.%(ext)s")
-        base_command = self._base_command(binary, settings=settings, platform=platform)
+        base_command = self._base_command(binary, platform=platform)
 
         steps: list[tuple[str, list[str], int]] = []
         if items.video:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import subprocess
@@ -79,20 +78,53 @@ class BilibiliService:
         safe_stem = self._safe_name(info.title if info.part == info.title else f"{info.title}-{info.part}")
 
         task_manager.update_task(task_id, status="running", progress=5)
+        selected_items = [
+            item_name
+            for item_name, enabled in (
+                ("video", items.video),
+                ("audio", items.audio),
+                ("subtitles", items.subtitles),
+                ("thumbnail", items.thumbnail),
+            )
+            if enabled
+        ]
+        if not selected_items:
+            raise RuntimeError("请至少选择一个下载项。")
+
+        item_ranges = self._build_item_ranges(selected_items)
 
         if items.video:
+            progress_start, progress_end = item_ranges["video"]
             task_manager.append_log(task_id, "下载视频开始")
-            video_path = self._download_video(playurl, safe_stem, target_dir)
+            video_path = self._download_video(
+                playurl,
+                safe_stem,
+                target_dir,
+                task_id,
+                task_manager,
+                progress_start=progress_start,
+                progress_end=progress_end,
+            )
+            task_manager.append_log(task_id, "视频下载完成")
             task_manager.append_output_file(task_id, str(video_path))
-            task_manager.update_task(task_id, progress=40)
 
         if items.audio:
+            progress_start, progress_end = item_ranges["audio"]
             task_manager.append_log(task_id, "下载音频开始")
-            audio_path = self._download_audio(playurl, safe_stem, target_dir)
+            audio_path = self._download_audio(
+                playurl,
+                safe_stem,
+                target_dir,
+                task_id,
+                task_manager,
+                progress_start=progress_start,
+                progress_end=progress_end,
+            )
+            task_manager.append_log(task_id, "音频下载完成")
             task_manager.append_output_file(task_id, str(audio_path))
-            task_manager.update_task(task_id, progress=65)
 
         if items.subtitles:
+            _, progress_end = item_ranges["subtitles"]
             subtitle_path = self._download_subtitle(player_info, safe_stem, target_dir)
             if subtitle_path:
                 task_manager.append_log(task_id, "字幕下载完成")
@@ -100,15 +132,17 @@ class BilibiliService:
                 task_manager.update_task(task_id, subtitle_path=str(subtitle_path))
             else:
                 task_manager.append_log(task_id, "当前视频没有可用字幕")
-            task_manager.update_task(task_id, progress=82)
+            task_manager.update_task(task_id, progress=progress_end)
 
         if items.thumbnail:
+            _, progress_end = item_ranges["thumbnail"]
             thumbnail_path = self._download_thumbnail(info.thumbnail, safe_stem, target_dir)
             if thumbnail_path:
                 task_manager.append_log(task_id, "封面下载完成")
                 task_manager.append_output_file(task_id, str(thumbnail_path))
-            task_manager.update_task(task_id, progress=92)
+            task_manager.update_task(task_id, progress=progress_end)
 
+        task_manager.append_log(task_id, "任务下载完成")
         task_manager.update_task(task_id, status="completed", progress=100)
 
     def _client(self) -> httpx.Client:
@@ -198,7 +232,16 @@ class BilibiliService:
             raise RuntimeError(payload.get("message") or "B站 播放流地址获取失败。")
         return payload["data"]
 
-    def _download_video(self, playurl: dict, safe_stem: str, target_dir: Path) -> Path:
+    def _download_video(
+        self,
+        playurl: dict,
+        safe_stem: str,
+        target_dir: Path,
+        task_id: str,
+        task_manager: TaskManager,
+        progress_start: int,
+        progress_end: int,
+    ) -> Path:
         dash = playurl.get("dash")
         if dash and dash.get("video"):
             ffmpeg = self._ensure_ffmpeg()
@@ -210,9 +253,35 @@ class BilibiliService:
             video_part = target_dir / f"{safe_stem}.video.m4s"
             audio_part = target_dir / f"{safe_stem}.audio.m4s"
             output_file = target_dir / f"{safe_stem}.mp4"
-            self._download_file(video_stream["baseUrl"], video_part)
-            self._download_file(audio_stream["baseUrl"], audio_part)
+            video_url = self._pick_stream_url(video_stream)
+            audio_url = self._pick_stream_url(audio_stream)
+            if not video_url or not audio_url:
+                raise RuntimeError("B站 视频或音频流地址缺失，无法下载。")
+
+            video_progress_end = progress_start + int((progress_end - progress_start) * 0.45)
+            audio_progress_end = progress_start + int((progress_end - progress_start) * 0.8)
+            self._download_file(
+                video_url,
+                video_part,
+                task_id=task_id,
+                task_manager=task_manager,
+                progress_start=progress_start,
+                progress_end=video_progress_end,
+            )
+            task_manager.append_log(task_id, "视频流下载完成")
+            self._download_file(
+                audio_url,
+                audio_part,
+                task_id=task_id,
+                task_manager=task_manager,
+                progress_start=video_progress_end,
+                progress_end=audio_progress_end,
+            )
+            task_manager.append_log(task_id, "音频流下载完成")
+            task_manager.update_task(task_id, progress=audio_progress_end)
             self._merge_streams(ffmpeg, video_part, audio_part, output_file)
+            task_manager.append_log(task_id, "音视频合并完成")
+            task_manager.update_task(task_id, progress=progress_end)
             video_part.unlink(missing_ok=True)
             audio_part.unlink(missing_ok=True)
             return output_file
@@ -220,22 +289,56 @@ class BilibiliService:
         durl = playurl.get("durl") or []
         if durl:
             output_file = target_dir / f"{safe_stem}.mp4"
-            self._download_file(durl[0]["url"], output_file)
+            source_url = self._pick_stream_url(durl[0])
+            if not source_url:
+                raise RuntimeError("B站 视频流地址缺失，无法下载。")
+            self._download_file(
+                source_url,
+                output_file,
+                task_id=task_id,
+                task_manager=task_manager,
+                progress_start=progress_start,
+                progress_end=progress_end,
+            )
             return output_file
 
         raise RuntimeError("B站 视频流地址缺失，无法下载。")
 
-    def _download_audio(self, playurl: dict, safe_stem: str, target_dir: Path) -> Path:
+    def _download_audio(
+        self,
+        playurl: dict,
+        safe_stem: str,
+        target_dir: Path,
+        task_id: str,
+        task_manager: TaskManager,
+        progress_start: int,
+        progress_end: int,
+    ) -> Path:
         ffmpeg = self._ensure_ffmpeg()
         dash = playurl.get("dash")
         if dash and dash.get("audio"):
             audio_stream = self._pick_audio_stream(dash["audio"])
             if not audio_stream:
                 raise RuntimeError("B站 未返回可用音频流。")
+            audio_url = self._pick_stream_url(audio_stream)
+            if not audio_url:
+                raise RuntimeError("B站 音频流地址缺失，无法下载。")
             raw_audio = target_dir / f"{safe_stem}.source.m4s"
             output_file = target_dir / f"{safe_stem}.m4a"
-            self._download_file(audio_stream["baseUrl"], raw_audio)
+            download_progress_end = progress_start + int((progress_end - progress_start) * 0.8)
+            self._download_file(
+                audio_url,
+                raw_audio,
+                task_id=task_id,
+                task_manager=task_manager,
+                progress_start=progress_start,
+                progress_end=download_progress_end,
+            )
+            task_manager.append_log(task_id, "原始音频流下载完成")
+            task_manager.update_task(task_id, progress=download_progress_end)
             self._remux_audio(ffmpeg, raw_audio, output_file)
+            task_manager.append_log(task_id, "音频封装完成")
+            task_manager.update_task(task_id, progress=progress_end)
             raw_audio.unlink(missing_ok=True)
             return output_file
 
@@ -243,8 +346,23 @@ class BilibiliService:
         if durl:
             source_file = target_dir / f"{safe_stem}.source.mp4"
             output_file = target_dir / f"{safe_stem}.mp3"
-            self._download_file(durl[0]["url"], source_file)
+            source_url = self._pick_stream_url(durl[0])
+            if not source_url:
+                raise RuntimeError("B站 音频流地址缺失，无法下载。")
+            download_progress_end = progress_start + int((progress_end - progress_start) * 0.8)
+            self._download_file(
+                source_url,
+                source_file,
+                task_id=task_id,
+                task_manager=task_manager,
+                progress_start=progress_start,
+                progress_end=download_progress_end,
+            )
+            task_manager.append_log(task_id, "原始视频文件下载完成")
+            task_manager.update_task(task_id, progress=download_progress_end)
             self._extract_audio(ffmpeg, source_file, output_file)
+            task_manager.append_log(task_id, "音频提取完成")
+            task_manager.update_task(task_id, progress=progress_end)
             source_file.unlink(missing_ok=True)
             return output_file
 
@@ -277,14 +395,38 @@ class BilibiliService:
         self._download_file(thumbnail_url, output_file)
         return output_file
 
-    def _download_file(self, url: str, target: Path) -> None:
+    def _download_file(
+        self,
+        url: str,
+        target: Path,
+        task_id: str | None = None,
+        task_manager: TaskManager | None = None,
+        progress_start: int | None = None,
+        progress_end: int | None = None,
+    ) -> None:
         normalized_url = self._normalize_url(url)
         with self._client() as client:
             with client.stream("GET", normalized_url) as response:
                 response.raise_for_status()
+                total = int(response.headers.get("content-length") or 0)
+                downloaded = 0
+                last_progress = None
                 with target.open("wb") as file_obj:
                     for chunk in response.iter_bytes():
                         file_obj.write(chunk)
+                        downloaded += len(chunk)
+                        if (
+                            task_id
+                            and task_manager
+                            and total > 0
+                            and progress_start is not None
+                            and progress_end is not None
+                        ):
+                            ratio = min(downloaded / total, 1)
+                            progress = progress_start + int((progress_end - progress_start) * ratio)
+                            if progress != last_progress:
+                                task_manager.update_task(task_id, progress=progress)
+                                last_progress = progress
 
     def _merge_streams(self, ffmpeg: str, video_file: Path, audio_file: Path, output_file: Path) -> None:
         result = subprocess.run(
@@ -363,6 +505,32 @@ class BilibiliService:
         if not audios:
             return None
         return sorted(audios, key=lambda item: item.get("bandwidth", 0), reverse=True)[0]
+
+    def _pick_stream_url(self, stream: dict) -> str | None:
+        for key in ("baseUrl", "base_url", "url"):
+            value = stream.get(key)
+            if isinstance(value, str) and value:
+                return self._normalize_url(value)
+
+        for key in ("backupUrl", "backup_url"):
+            value = stream.get(key)
+            if isinstance(value, list) and value:
+                first = value[0]
+                if isinstance(first, str) and first:
+                    return self._normalize_url(first)
+        return None
+
+    def _build_item_ranges(self, selected_items: list[str]) -> dict[str, tuple[int, int]]:
+        start = 5
+        usable = 90
+        step = max(1, usable // len(selected_items))
+        ranges: dict[str, tuple[int, int]] = {}
+        cursor = start
+        for index, item_name in enumerate(selected_items):
+            end = 95 if index == len(selected_items) - 1 else min(95, cursor + step)
+            ranges[item_name] = (cursor, end)
+            cursor = end
+        return ranges
 
     def _pick_subtitle(self, subtitles: list[dict]) -> dict:
         preferred_patterns = ("zh", "中文", "中")

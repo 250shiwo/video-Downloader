@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+import httpx
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, Response
 
 from api.models import (
     AppSettings,
@@ -121,3 +124,49 @@ def summarize(payload: SummaryRequest) -> SummaryResponse:
         return summary_service.summarize(task.subtitle_path or "", settings.ai)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/files")
+def download_file(path: str = Query(..., description="任务生成文件的绝对或相对路径")) -> FileResponse:
+    settings = config_service.get_settings()
+    requested = Path(path).expanduser()
+    if not requested.is_absolute():
+        requested = Path.cwd() / requested
+
+    downloads_root = Path(settings.download_dir).expanduser().resolve()
+    requested = requested.resolve()
+
+    if downloads_root not in requested.parents:
+        raise HTTPException(status_code=400, detail="文件路径不在允许的下载目录内。")
+    if not requested.exists() or not requested.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在。")
+
+    return FileResponse(path=requested, filename=requested.name)
+
+
+@app.get("/api/proxy-image")
+def proxy_image(url: str = Query(..., description="远程图片地址")) -> Response:
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="图片地址无效。")
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/136.0.0.0 Safari/537.36"
+        ),
+    }
+    if "hdslb.com" in url or "bilibili.com" in url:
+        headers["Referer"] = "https://www.bilibili.com/"
+
+    try:
+        response = httpx.get(url, headers=headers, timeout=30, follow_redirects=True)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="封面加载失败。") from exc
+
+    return Response(
+        content=response.content,
+        media_type=response.headers.get("content-type", "image/jpeg"),
+        headers={"Cache-Control": "public, max-age=3600"},
+    )

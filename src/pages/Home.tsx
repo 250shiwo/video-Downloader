@@ -52,6 +52,12 @@ export default function Home() {
     return () => window.clearTimeout(timer)
   }, [clearMessage, error])
 
+  useEffect(() => {
+    if (!taskDetail?.id && tasks[0]?.id) {
+      inspectTask(tasks[0].id).catch(() => undefined)
+    }
+  }, [inspectTask, taskDetail?.id, tasks])
+
   return (
     <AppShell>
       <div className="space-y-8">

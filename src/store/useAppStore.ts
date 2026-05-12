@@ -4,6 +4,7 @@ import { api } from '@/utils/api'
 import type {
   AppSettings,
   DownloadItems,
+  DownloadTaskResponse,
   ParseResponse,
   SummaryResponse,
   TaskDetail,
@@ -91,14 +92,15 @@ export const useAppStore = create<StoreState>((set, get) => ({
     }
   },
   startDownload: async () => {
-    const { url, downloadItems, loadTasks } = get()
+    const { url, downloadItems, loadTasks, inspectTask } = get()
     set({ busy: true, error: '' })
     try {
-      await api.post('/api/tasks/download', {
+      const result = await api.post<DownloadTaskResponse>('/api/tasks/download', {
         url,
         items: downloadItems,
       })
       await loadTasks()
+      await inspectTask(result.task_id)
     } catch (error) {
       set({ error: error instanceof Error ? error.message : '创建任务失败' })
     } finally {

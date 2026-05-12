@@ -19,6 +19,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+function withQuery(path: string, params: Record<string, string>) {
+  const search = new URLSearchParams(params)
+  return `${path}?${search.toString()}`
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
@@ -31,4 +36,6 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
+  proxyImageUrl: (url: string) => withQuery('/api/proxy-image', { url }),
+  fileDownloadUrl: (path: string) => withQuery('/api/files', { path }),
 }

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Clock3, Languages, Link2, UserRound } from 'lucide-react'
 
 import type { ParseResponse } from '@/types'
+import { api } from '@/utils/api'
 
 type MetadataCardProps = {
   metadata: ParseResponse | null
@@ -15,6 +16,8 @@ function formatDuration(duration?: number) {
 }
 
 export function MetadataCard({ metadata }: MetadataCardProps) {
+  const thumbnailSrc = metadata?.thumbnail ? api.proxyImageUrl(metadata.thumbnail) : ''
+
   return (
     <section className="rounded-[30px] border border-[var(--line)] bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.05)]">
       <div className="mb-5 flex items-center justify-between">
@@ -34,7 +37,7 @@ export function MetadataCard({ metadata }: MetadataCardProps) {
               <img
                 alt={metadata.title}
                 className="h-full min-h-[240px] w-full object-cover"
-                src={metadata.thumbnail}
+                src={thumbnailSrc}
               />
             ) : (
               <div className="flex min-h-[240px] items-center justify-center text-sm text-[var(--muted)]">

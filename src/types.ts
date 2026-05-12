@@ -49,3 +49,8 @@ export type SummaryResponse = {
   bullets: string[]
   tags: string[]
 }
+
+export type DownloadTaskResponse = {
+  task_id: string
+  status: 'queued' | 'running' | 'completed' | 'failed'
+}

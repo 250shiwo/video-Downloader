@@ -60,3 +60,18 @@ def test_convert_subtitle_json_to_srt() -> None:
     )
     assert "00:00:00,000 --> 00:00:02,500" in srt
     assert "第一句" in srt
+
+
+def test_pick_stream_url_supports_multiple_key_shapes() -> None:
+    service = BilibiliService()
+    assert service._pick_stream_url({"baseUrl": "//example.com/video.m4s"}) == "https://example.com/video.m4s"
+    assert service._pick_stream_url({"base_url": "https://example.com/audio.m4s"}) == "https://example.com/audio.m4s"
+    assert service._pick_stream_url({"backup_url": ["//example.com/fallback.m4s"]}) == "https://example.com/fallback.m4s"
+
+
+def test_build_item_ranges_cover_selected_items() -> None:
+    service = BilibiliService()
+    ranges = service._build_item_ranges(["video", "audio", "thumbnail"])
+    assert ranges["video"] == (5, 35)
+    assert ranges["audio"] == (35, 65)
+    assert ranges["thumbnail"] == (65, 95)

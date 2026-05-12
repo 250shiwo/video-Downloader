@@ -25,6 +25,8 @@ class AppSettings(BaseModel):
     download_dir: str = "./data/downloads"
     default_items: DownloadItems = Field(default_factory=DownloadItems)
     ai: AISettings = Field(default_factory=AISettings)
+    browser_cookies: str = ""
+    cookies_file: str = ""
 
 
 class ParseRequest(BaseModel):

@@ -63,6 +63,18 @@ npm test
 python -m pytest api/tests
 ```
 
+## B站 412 说明
+
+- 如果 B站 返回 `HTTP Error 412: Precondition Failed`，通常是平台风控校验触发
+- 请打开设置页，填写 `浏览器 Cookie 来源`
+- 推荐值：
+  - `chrome`
+  - `edge`
+  - `firefox`
+  - `chrome:Default`
+- 填写前请确保对应浏览器里已经登录 B站
+- 也可以改用 `Cookie 文件路径`，填写 Netscape 格式 `cookies.txt` 的绝对路径
+
 ## 文档
 
 - 设计文档：`docs/superpowers/specs/2026-05-12-video-downloader-design.md`

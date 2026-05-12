@@ -45,7 +45,8 @@ def health() -> dict[str, str]:
 @app.post("/api/parse", response_model=ParseResponse)
 def parse_video(payload: ParseRequest) -> ParseResponse:
     try:
-        return yt_dlp_service.fetch_metadata(payload.url)
+        settings = config_service.get_settings()
+        return yt_dlp_service.fetch_metadata(payload.url, settings=settings)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -54,14 +55,14 @@ def parse_video(payload: ParseRequest) -> ParseResponse:
 
 @app.post("/api/tasks/download", response_model=DownloadTaskResponse)
 def create_download_task(payload: DownloadRequest) -> DownloadTaskResponse:
+    settings = config_service.get_settings()
     try:
-        metadata = yt_dlp_service.fetch_metadata(payload.url)
+        metadata = yt_dlp_service.fetch_metadata(payload.url, settings=settings)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     task_id = uuid4().hex[:12]
     task_manager.create_task(task_id, metadata.title, payload.url)
-    settings = config_service.get_settings()
 
     def worker() -> None:
         try:
